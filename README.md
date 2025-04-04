@@ -1,6 +1,6 @@
 # morse_code
-project cs file encryption/decryption tool
-week 1 : encryption
-week 2 : decryption
-week 3 : testing
+project cs file encryption/decryption tool\n
+week 1 : encryption\n
+week 2 : decryption\n
+week 3 : testing\n
 
