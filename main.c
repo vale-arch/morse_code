@@ -1,11 +1,20 @@
 #include <stdio.h>
-#include<stdlib.h>
-#include<string.h>
-#include<openssl/aes.h>
+#include <stdlib.h>
+#include <string.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
 
 // AES-128 key for encryption and decryption (should be properly secured in production)
 // Note: Using a hardcoded key is insecure - consider using a key derivation function
 const unsigned char aes_key[] = "0123456789abcdef";
+
+// Helper function to print OpenSSL errors
+void print_openssl_error() {
+    unsigned long err;
+    while ((err = ERR_get_error())) {
+        fprintf(stderr, "OpenSSL error: %s\n", ERR_error_string(err, NULL));
+    }
+}
 
 //character alphabet of table base64
 const unsigned char character_alphabet[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -68,21 +77,60 @@ void encrypt_decrypt_file(const char* path,const char* option){
 
     if(!strcmp(option,"encrypt")){
         //(AES- 128,AES-192,AES-256)bit
-        AES_KEY enc_key;
-        AES_set_encrypt_key(aes_key,128,&enc_key);
+        EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+        if (!ctx) {
+            print_openssl_error();
+            free(aes_input);
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
 
         //init vector
-        unsigned char iv[AES_BLOCK_SIZE+1];
-        memset(iv, 0x00,AES_BLOCK_SIZE);
-        iv[AES_BLOCK_SIZE]='\0';
+        unsigned char iv[EVP_MAX_IV_LENGTH+1];
+        memset(iv, 0x00, EVP_MAX_IV_LENGTH);
+        iv[EVP_MAX_IV_LENGTH]='\0';
 
-    //buffer for encryption
-    size_t length_enc_out = ((length_data + AES_BLOCK_SIZE)/ AES_BLOCK_SIZE) * AES_BLOCK_SIZE;
-    if(!((length_data+AES_BLOCK_SIZE)%AES_BLOCK_SIZE))length_enc_out = length_data;
-    unsigned char *enc_out =(unsigned char *)malloc(sizeof(unsigned char)* length_enc_out);
+        // Initialize encryption
+        if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, aes_key, iv)) {
+            print_openssl_error();
+            EVP_CIPHER_CTX_free(ctx);
+            free(aes_input);
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
 
-    //CBC Encryption
-    AES_cbc_encrypt(aes_input,enc_out,length_data,&enc_key,iv,AES_ENCRYPT);
+        //buffer for encryption
+        size_t length_enc_out = length_data + EVP_CIPHER_CTX_block_size(ctx);
+        unsigned char *enc_out = (unsigned char *)malloc(sizeof(unsigned char)* length_enc_out);
+        if (!enc_out) {
+            EVP_CIPHER_CTX_free(ctx);
+            free(aes_input);
+            fclose(file);
+            fprintf(stderr, "Error: Memory allocation failed\n");
+            exit(EXIT_FAILURE);
+        }
+
+        int out_len;
+        // Perform encryption
+        if (1 != EVP_EncryptUpdate(ctx, enc_out, &out_len, aes_input, length_data)) {
+            print_openssl_error();
+            EVP_CIPHER_CTX_free(ctx);
+            free(enc_out);
+            free(aes_input);
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
+
+        int final_len;
+        if (1 != EVP_EncryptFinal_ex(ctx, enc_out + out_len, &final_len)) {
+            print_openssl_error();
+            EVP_CIPHER_CTX_free(ctx);
+            free(enc_out);
+            free(aes_input);
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
+        length_enc_out = out_len + final_len;
 
     // Securely clear sensitive data from memory
     if(aes_input) {
@@ -147,20 +195,59 @@ void encrypt_decrypt_file(const char* path,const char* option){
     }
     fclose(temporary_file);
 
-    //(Aes-128,AES-192,AES-256)bit
-    AES_KEY dec_key;
-    AES_set_decrypt_key(aes_key,128,&dec_key);
+        //(Aes-128,AES-192,AES-256)bit
+        EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+        if (!ctx) {
+            print_openssl_error();
+            free(aes_input);
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
 
-    //init vector
-    unsigned char iv[AES_BLOCK_SIZE+1];
-    memset(iv,0x00,AES_BLOCK_SIZE);
-    iv[AES_BLOCK_SIZE]='\0';
+        //init vector
+        unsigned char iv[EVP_MAX_IV_LENGTH+1];
+        memset(iv,0x00,EVP_MAX_IV_LENGTH);
+        iv[EVP_MAX_IV_LENGTH]='\0';
 
-    //buffer for decryption
-    unsigned char *dec_out = (unsigned *)malloc(sizeof(unsigned char)*length_data);
+        // Initialize decryption
+        if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, aes_key, iv)) {
+            print_openssl_error();
+            EVP_CIPHER_CTX_free(ctx);
+            free(aes_input);
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
 
-    //CBC decryption
-    AES_cbc_encrypt(aes_input,dec_out,length_data,&dec_key,iv,AES_DECRYPT);
+        //buffer for decryption
+        unsigned char *dec_out = (unsigned char *)malloc(sizeof(unsigned char)*length_data);
+        if (!dec_out) {
+            EVP_CIPHER_CTX_free(ctx);
+            free(aes_input);
+            fclose(file);
+            fprintf(stderr, "Error: Memory allocation failed\n");
+            exit(EXIT_FAILURE);
+        }
+
+        int out_len;
+        // Perform decryption
+        if (1 != EVP_DecryptUpdate(ctx, dec_out, &out_len, aes_input, length_data)) {
+            print_openssl_error();
+            EVP_CIPHER_CTX_free(ctx);
+            free(dec_out);
+            free(aes_input);
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
+
+        int final_len;
+        if (1 != EVP_DecryptFinal_ex(ctx, dec_out + out_len, &final_len)) {
+            print_openssl_error();
+            EVP_CIPHER_CTX_free(ctx);
+            free(dec_out);
+            free(aes_input);
+            fclose(file);
+            exit(EXIT_FAILURE);
+        }
 
     free(aes_input);
 
@@ -173,6 +260,7 @@ void encrypt_decrypt_file(const char* path,const char* option){
     //verbose(dec_out foematted in hexadecimal)
     //for(int i=0; i<strlen((char*)dec_out);i++)  printf("-%d --> %c\n",i,*(dec_out +i));
 
+    EVP_CIPHER_CTX_free(ctx);
     free(dec_out);
 }
 else{
