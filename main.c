@@ -3,8 +3,9 @@
 #include<string.h>
 #include<openssl/aes.h>
 
-//AES key for encryption and dycreption
-const unsigned char aes_key[]="0123456789abcdef";
+// AES-128 key for encryption and decryption (should be properly secured in production)
+// Note: Using a hardcoded key is insecure - consider using a key derivation function
+const unsigned char aes_key[] = "0123456789abcdef";
 
 //character alphabet of table base64
 const unsigned char character_alphabet[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -16,34 +17,51 @@ unsigned char* decode(unsigned const char*);
 
 //principal function
 int main(int argc,char **argv){
-    if(argc == 3){
-        if (!strcmp(argv[1],"encrypt"))
-        encrypt_decrypt_file(argv[2],"encrypt");
-        else if(!strcmp(argv[1],"decrypt"))
-        encrypt_decrypt_file(argv[2],"decrypt");
-        else 
-        printf("invalid option");
-    }else{
-        printf("invalid options");
+    if(argc == 3) {
+        if (!strcmp(argv[1], "encrypt")) {
+            encrypt_decrypt_file(argv[2], "encrypt");
+        }
+        else if(!strcmp(argv[1], "decrypt")) {
+            encrypt_decrypt_file(argv[2], "decrypt");
+        }
+        else {
+            fprintf(stderr, "Error: Invalid option. Use 'encrypt' or 'decrypt'\n");
+            return 1;
+        }
+    } else {
+        fprintf(stderr, "Error: Invalid arguments\nUsage: %s [encrypt|decrypt] filename\n", argv[0]);
+        return 1;
     }
     return 0;
 }
 void encrypt_decrypt_file(const char* path,const char* option){
-    FILE *file;
-    if((file = fopen(path,"r"))== NULL){
-        printf("cannot open this file : %s\n",path);
-        exit(0);
+    FILE *file = NULL;
+    if((file = fopen(path, "rb")) == NULL) {
+        fprintf(stderr, "Error: Cannot open file '%s' for reading\n", path);
+        exit(EXIT_FAILURE);
     }
     fseek(file,0,SEEK_END);
     size_t length_data = ftell(file);
     rewind(file);
 
-    unsigned char *aes_input = (unsigned char *)malloc(sizeof(unsigned char) * length_data +1);
-    int i=0;
-    while (i<length_data)
-    {
-       *(aes_input+i)=getc(file);
-       ++i;
+    unsigned char *aes_input = (unsigned char *)malloc(sizeof(unsigned char) * length_data + 1);
+    if(aes_input == NULL) {
+        fclose(file);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    int i = 0;
+    while(i < length_data) {
+        int ch = getc(file);
+        if(ch == EOF) {
+            free(aes_input);
+            fclose(file);
+            fprintf(stderr, "Error: Unexpected end of file\n");
+            exit(EXIT_FAILURE);
+        }
+        aes_input[i] = (unsigned char)ch;
+        ++i;
     }
     rewind(file);i=0;
     *(aes_input+length_data)='\0';
@@ -66,7 +84,11 @@ void encrypt_decrypt_file(const char* path,const char* option){
     //CBC Encryption
     AES_cbc_encrypt(aes_input,enc_out,length_data,&enc_key,iv,AES_ENCRYPT);
 
-    free(aes_input);
+    // Securely clear sensitive data from memory
+    if(aes_input) {
+        memset(aes_input, 0, length_data);
+        free(aes_input);
+    }
 
     //reopen the file to clean it
     fclose(file);
@@ -98,7 +120,10 @@ void encrypt_decrypt_file(const char* path,const char* option){
     //verbose(enc_out formatted in hexadecimal)
     //for(int i=0; i<length_enc_out; i++)  printf("-%d --> %02x\n",i,*(enc_out +i));
 
-    free(enc_out);
+    if(enc_out) {
+        memset(enc_out, 0, length_enc_out);
+        free(enc_out);
+    }
     }
 
     else if (!strcmp(option,"decrypt")){
@@ -156,7 +181,13 @@ else{
 
 fclose(file);
 }
-unsigned char* encode(unsigned const char* string){
+/**
+ * Encodes binary data to Base64 format
+ * @param string Input binary data to encode
+ * @return Pointer to allocated buffer containing Base64 string
+ * @note Caller must free the returned pointer
+ */
+unsigned char* encode(unsigned const char* string) {
 	//get length of string
 	int length_of_string = 0;
 	while(string[length_of_string] != '\0')	length_of_string++;
@@ -239,7 +270,13 @@ unsigned char* encode(unsigned const char* string){
 	return encode_data;
 }
 
-unsigned char* decode(unsigned const char* string){
+/**
+ * Decodes Base64 data back to binary format
+ * @param string Base64 encoded string to decode
+ * @return Pointer to allocated buffer containing binary data
+ * @note Caller must free the returned pointer
+ */
+unsigned char* decode(unsigned const char* string) {
 
 	//get length of string
 	int length_of_string = 0;
@@ -321,3 +358,11 @@ unsigned char* decode(unsigned const char* string){
 
 	return decode_data;
 }
+//gcc -o main main.c -lssl -lcrypto
+//./main encrypt test.txt
+//./main decrypt test.txt
+//./main encrypt test.txt
+//./main decrypt test.txt
+//./main encrypt test.txt
+//./main decrypt test.txt
+//./main encrypt test.txt
