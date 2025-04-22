@@ -255,7 +255,7 @@ void encrypt_decrypt_file(const char* path,const char* option){
     fclose(file);
     file=fopen(path,"w");
 
-    fprintf(file,"%s",dec_out);
+    fwrite(dec_out, 1, out_len + final_len, file);
 
     //verbose(dec_out foematted in hexadecimal)
     //for(int i=0; i<strlen((char*)dec_out);i++)  printf("-%d --> %c\n",i,*(dec_out +i));
@@ -379,10 +379,10 @@ unsigned char* decode(unsigned const char* string) {
 	}
 
 	int number_of_binary = ((length_of_string - padding) * 6) - (padding * 2);
-	unsigned char* decode_data = (unsigned char*)malloc(sizeof(unsigned char) * (number_of_binary / 8) + 1);
+	unsigned char* decode_data = (unsigned char*)malloc(sizeof(unsigned char) * ((number_of_binary / 8) + 1));
 
 	//pointer to store all bits and calloc just to initialize frame with 0
-	int* store_result_binary = (int*)calloc(sizeof(int) , number_of_binary * 8);
+	int* store_result_binary = (int*)calloc(sizeof(int) , number_of_binary);
 
 	//Jumping (6 bits) during when store bits in pointer
 	int z_index = 6;
@@ -435,7 +435,7 @@ unsigned char* decode(unsigned const char* string) {
 		*(decode_data + (index++)) = (int)_8bit;
 		j=7;power=0;_8bit=0;
 	}
-	*(decode_data + (number_of_binary / 8) + 1) = '\0';
+	*(decode_data + (number_of_binary / 8)) = '\0';
 
 	//to see the decoding
 	//for(int i=0; i<(number_of_binary / 8) ;i++)	printf("-%d %02x\n",i,*(decode_data + i));
