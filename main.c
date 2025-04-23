@@ -183,17 +183,43 @@ void encrypt_decrypt_file(const char* path,const char* option){
 
     //clear aes_input to store on it binary context
     memset(aes_input,0x00,length_data);
-    length_data=0;
 
-    //aes_input content a binary context
-    while(1){
-        int in;
-        if (feof(temporary_file))break;
-        fscanf(temporary_file,"0x%x",&in);
-        *(aes_input+length_data)=(char)in;
-        length_data++;
+    // Allocate a new buffer for decoded binary data with enough size
+    size_t decoded_buffer_size = length_data * 2; // heuristic for buffer size
+    unsigned char *decoded_binary = (unsigned char *)malloc(decoded_buffer_size);
+    if (!decoded_binary) {
+        fclose(temporary_file);
+        free(aes_input);
+        fclose(file);
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        exit(EXIT_FAILURE);
+    }
+
+    length_data = 0;
+    int in;
+    // Read hex values safely from temporary_file into decoded_binary
+    while (fscanf(temporary_file, "0x%x", &in) == 1) {
+        if (length_data >= decoded_buffer_size) {
+            // Reallocate buffer if needed
+            decoded_buffer_size *= 2;
+            unsigned char *temp = (unsigned char *)realloc(decoded_binary, decoded_buffer_size);
+            if (!temp) {
+                free(decoded_binary);
+                fclose(temporary_file);
+                free(aes_input);
+                fclose(file);
+                fprintf(stderr, "Error: Memory allocation failed\n");
+                exit(EXIT_FAILURE);
+            }
+            decoded_binary = temp;
+        }
+        decoded_binary[length_data++] = (unsigned char)in;
     }
     fclose(temporary_file);
+
+    // Free original aes_input and replace with decoded_binary
+    free(aes_input);
+    aes_input = decoded_binary;
 
         //(Aes-128,AES-192,AES-256)bit
         EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
